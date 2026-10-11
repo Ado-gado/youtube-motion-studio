@@ -11,7 +11,7 @@ def audit():
     # Generated source has no user-specific filesystem paths; text must be valid UTF-8.
     for f in ROOT.rglob('*'):
         if f.name=='.install-report.json':continue
-        if not f.is_file() or any(x in f.parts for x in ['.venv','.git','.agents','outputs','scenes','__pycache__']):continue
+        if not f.is_file() or any(x in f.parts for x in ['.venv','.git','.agents','outputs','scenes','LOCAL_RENDER','__pycache__']):continue
         if f.suffix not in ['.py','.md','.html','.json','.jsx','.txt']:continue
         try:s=f.read_text(encoding='utf8')
         except UnicodeError:problems.append(str(f.relative_to(ROOT))+': invalid UTF-8');continue

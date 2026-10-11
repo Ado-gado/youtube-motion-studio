@@ -5,6 +5,7 @@ __pycache__/
 .env.*
 !.env.example
 outputs/
+LOCAL_RENDER/
 scenes/
 .install-report.json
 .audit-report.json
