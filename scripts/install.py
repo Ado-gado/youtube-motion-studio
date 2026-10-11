@@ -31,10 +31,10 @@ if dest.exists() and not marker.exists():
     raise SystemExit('An unrelated youtube-motion-design skill already exists; choose another project or migrate it explicitly. Environment has been prepared, existing skill preserved.')
 shutil.copytree(source,dest,dirs_exist_ok=True);marker.write_text(str(ROOT),encoding='utf8')
 agent_file=project/'AGENTS.md';old=agent_file.read_text(encoding='utf8') if agent_file.exists() else ''
-block='<!-- motion-studio:start -->\nDocumentary motion package: `'+os.path.relpath(ROOT,project)+'`. Before motion work read its STYLE.md, FEEDBACK.md, WORKFLOW.md and skills/youtube-motion-design/SKILL.md. Keep scene assets in the project and use its renderer. The latest user instruction wins.\n<!-- motion-studio:end -->'
+block='<!-- motion-studio:start -->\nDocumentary motion package: `'+os.path.relpath(ROOT,project)+'`. Before motion work read its STYLE.md, FEEDBACK.md, HANDOFF.md, WORKFLOW.md and skills/youtube-motion-design/SKILL.md. Deliver the current requested motion graphics as a finished MP4. Do not create websites, apps, dashboards, editors, unrelated content or sample/test videos unless explicitly requested. Installation runs doctor/audit only; no Gagarin/example render. Use V2 motion principles, not its subject, assets, wording or layout. Keep working sources in the project. The latest user instruction wins.\n<!-- motion-studio:end -->'
 pat=r'<!-- motion-studio:start -->.*?<!-- motion-studio:end -->'
 new=re.sub(pat,lambda _:block,old,flags=re.S) if re.search(pat,old,re.S) else old.rstrip()+'\n\n'+block+'\n'
 agent_file.write_text(new,encoding='utf8')
 report={'version':(ROOT/'VERSION').read_text().strip(),'package':str(ROOT),'project':str(project),'doctor':json.loads(check.stdout),'installed_skill':str(dest)}
 (ROOT/'.install-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
-print('Installed local studio '+report['version']+'; doctor passed. Read START_HERE.md next.')
+print('Installed local studio '+report['version']+'; doctor passed. Read START_HERE.md. No demo video is required; wait for the current video brief.')
