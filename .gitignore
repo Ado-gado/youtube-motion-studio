@@ -6,6 +6,12 @@ __pycache__/
 !.env.example
 outputs/
 LOCAL_RENDER/
+EDITOR_WORK/
+*.motion.json
+*.saving
+*.checks.json
+*.ASSETS.md
+*.CREDITS.md
 scenes/
 .install-report.json
 .audit-report.json

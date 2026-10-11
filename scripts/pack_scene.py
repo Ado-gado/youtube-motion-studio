@@ -1,9 +1,11 @@
 from pathlib import Path
-import argparse,json,zipfile,uuid,re,hashlib
+import argparse,json,zipfile,uuid,re,hashlib,sys
 from datetime import datetime,timezone
 from runtime import ROOT
 from job_bundle import ALLOWED,MAX_BYTES,safe_name,validate_manifest,inspect_bundle
 from local_fonts import read_config
+sys.path.insert(0,str(ROOT))
+from editor.model import validate_editor,font_config
 
 def main():
     p=argparse.ArgumentParser(description='Export one requested scene and its local assets for PC rendering; no video render')
@@ -16,6 +18,9 @@ def main():
     root=a.scene_root.resolve();scene=a.scene.resolve();scene.relative_to(root)
     if root==Path(root.anchor) or not scene.is_file() or scene.suffix!='.html':raise ValueError('Choose an HTML scene within its project, not the filesystem root')
     local_font_config=read_config(scene)
+    editor_path=scene.parent/'motion-editor.json'
+    editor_config=validate_editor(json.loads(editor_path.read_text(encoding='utf-8-sig')),a.duration) if editor_path.is_file() else None
+    if editor_config is not None:local_font_config=font_config(editor_config)
     candidates=set()
     for folder in [scene.parent,root/'fonts',*a.include]:
         if folder.is_symlink():raise ValueError('Do not include symlinks')
@@ -37,7 +42,8 @@ def main():
     if sum(f.stat().st_size for f in candidates)>MAX_BYTES:raise ValueError('Scene bundle exceeds 1 GiB')
     slug=re.sub(r'[^a-zA-Z0-9_-]+','-',a.title).strip('-')[:40] or 'scene'
     job_id=slug+'-'+uuid.uuid4().hex[:12]
-    out=a.out.resolve() if a.out else ROOT/'outputs/bundles'/('motion-job-'+job_id+'.zip')
+    prefix='motion-scene-' if editor_config is not None else 'motion-job-'
+    out=a.out.resolve() if a.out else ROOT/'outputs/bundles'/(prefix+job_id+'.zip')
     out.parent.mkdir(parents=True,exist_ok=True)
     manifest={'schema':1,'job_id':job_id,'title':a.title,'account_label':a.account_label,'created_utc':datetime.now(timezone.utc).isoformat(),'render':{'scene':scene.relative_to(root).as_posix(),'duration':a.duration,'fps':a.fps,'width':a.width,'height':a.height,'capture':a.capture},'files':{}}
     if a.audio:manifest['render']['audio']=audio.relative_to(root).as_posix()

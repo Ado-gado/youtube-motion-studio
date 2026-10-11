@@ -19,6 +19,7 @@ parser.add_argument('--preview-only',action='store_true')
 parser.add_argument('--scene-root',type=Path,default=ROOT,help='Serve only this isolated scene/job root')
 parser.add_argument('--capture',choices=['auto','canvas','screenshot'],default='auto')
 parser.add_argument('--gif-preview',action='store_true',help='Optional GIF; disabled by default')
+parser.add_argument('--lean',action='store_true',help='Export MP4 and checks only; no persistent diagnostic images')
 args=parser.parse_args()
 scene=args.scene.resolve();out=args.out.resolve();scene_root=args.scene_root.resolve()
 if scene_root==Path(scene_root.anchor):raise SystemExit('Do not serve the filesystem root')
@@ -53,6 +54,8 @@ try:
         page.wait_for_function('window.READY===true || Boolean(window.ERROR)',timeout=60000)
         error=page.evaluate('window.ERROR || null')
         if error:raise RuntimeError('Scene failed: '+str(error))
+        if (scene.parent/'motion-editor.json').is_file() and not page.evaluate('window.MOTION_EDITOR_APPLIED===true'):
+            raise RuntimeError('Scene did not apply motion-editor.json. Read EDITOR_SCENES.md.')
         if local_font_config and not page.evaluate('window.MOTION_TEXT_LAYOUT_READY===true'):
             raise RuntimeError('Scene must await MOTION_LOCAL_FONTS_READY and recalculate text layout before setting MOTION_TEXT_LAYOUT_READY=true and READY=true. See LOCAL_FONTS.md.')
         page.evaluate('document.fonts.ready');page.wait_for_function("typeof window.seek==='function'")
@@ -67,16 +70,18 @@ try:
         times.update(range(2,int(args.duration),2))
         if args.probe_times:times.update(float(x) for x in args.probe_times.split(','))
         times=sorted(t for t in times if 0<=t<args.duration)
+        if args.lean:times=[]
         tiles=[]
         for n,t in enumerate(times):
             data=capture.grab(t)
             (out.parent/f'frame_{t:.3f}.jpg').write_bytes(data)
             tile=Image.open(io.BytesIO(data)).resize((480,270));tiles.append(tile)
-        sheet=Image.new('RGB',(1920,((len(tiles)+3)//4)*290));draw=ImageDraw.Draw(sheet)
-        for n,tile in enumerate(tiles):
-            x,y=(n%4)*480,(n//4)*290;sheet.paste(tile,(x,y));draw.text((x+6,y+273),f'{times[n]:.3f}s',fill='white')
-        sheet.save(out.parent/'contact-sheet.jpg')
-        if page.evaluate("typeof window.exportTimeline==='function'"):
+        if tiles:
+            sheet=Image.new('RGB',(1920,((len(tiles)+3)//4)*290));draw=ImageDraw.Draw(sheet)
+            for n,tile in enumerate(tiles):
+                x,y=(n%4)*480,(n//4)*290;sheet.paste(tile,(x,y));draw.text((x+6,y+273),f'{times[n]:.3f}s',fill='white')
+            sheet.save(out.parent/'contact-sheet.jpg')
+        if not args.lean and page.evaluate("typeof window.exportTimeline==='function'"):
             timeline=page.evaluate('()=>window.exportTimeline()')
             (out.parent/'ae_timeline.json').write_text(json.dumps(timeline,ensure_ascii=False),encoding='utf8')
         if not args.preview_only:
@@ -88,7 +93,7 @@ try:
             for n in range(round(args.duration*args.fps)):
                 data=capture.grab(n/args.fps)
                 wait_started=time.perf_counter();proc.stdin.write(data);encode_wait+=time.perf_counter()-wait_started
-                if n%72==0:print(f'{n}/{round(args.duration*args.fps)} frames',flush=True)
+                if n%max(1,args.fps)==0 or n==round(args.duration*args.fps)-1:print(f'{n+1}/{round(args.duration*args.fps)} frames',flush=True)
             proc.stdin.close()
             wait_started=time.perf_counter();result=proc.wait();encode_wait+=time.perf_counter()-wait_started
             if result:raise RuntimeError('FFmpeg encode failed')
@@ -112,7 +117,7 @@ try:
     checks['text_layout_ready']=bool(local_font_config)
     checks['total_seconds']=round(time.perf_counter()-started,3)
     (out.parent/'checks.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2),encoding='utf8')
-    print('Render checks passed. Inspect contact-sheet.jpg and the actual MP4 before delivery.',flush=True)
+    print('Render checks passed. Inspect '+('the actual MP4' if args.lean else 'contact-sheet.jpg and the actual MP4')+' before delivery.',flush=True)
 finally:
     if proc and proc.poll() is None:
         proc.kill();proc.wait()
