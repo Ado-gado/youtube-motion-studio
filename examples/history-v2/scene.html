@@ -1,0 +1,50 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Гагарин · бумажная глубина · V2</title>
+<style>@font-face{font-family:Oswald;src:url('../../fonts/Oswald.ttf')}@font-face{font-family:Onest;src:url('../../fonts/Onest.ttf')}@font-face{font-family:PTMono;src:url('../../fonts/PTMono.ttf')}*{box-sizing:border-box}body{margin:0;background:#202723;color:#e8e0cd;font:16px Onest,Arial}main{max-width:1450px;margin:auto;padding:24px}h1{font-size:24px}canvas{display:block;width:100%;aspect-ratio:16/9}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}label{display:block}input,button{width:100%;padding:9px;margin-top:5px;background:#344139;border:1px solid #697266;color:#eee}button{cursor:pointer}nav{display:flex;gap:10px}small{color:#b9beae}body.capture main{padding:0;max-width:none}body.capture .ui{display:none}body.capture canvas{width:1920px;height:1080px}</style>
+<main><div class="ui"><h1>Бумажная документалистика · персонаж / Земля / «Восток»</h1><small>Редактируемые слои. Та же сцена используется для предпросмотра и финального экспорта.</small><div class="controls"><label>Имя<input id="name"></label><label>Дата<input id="date"></label><label>Число<input id="number"></label><label>Подпись<input id="unit"></label><label>Длительность<input id="duration" type="number" min="8" max="30"></label><label>Динамика<input id="motion" type="range" min=".3" max="1.5" step=".05"></label><label>Глубина<input id="depth" type="range" min="0" max="1.5" step=".05"></label><label>Персонаж<input id="portraitUpload" type="file" accept="image/png"></label><label>Земля<input id="earthUpload" type="file" accept="image/png"></label><label>Корабль<input id="shipUpload" type="file" accept="image/png"></label></div></div><canvas id="scene" width="1920" height="1080"></canvas><div class="ui"><nav><button id="play">Пауза</button><button id="reset">Сначала</button><button id="save">Сохранить параметры</button></nav><input id="time" type="range" min="0" max="14" step=".01"><small id="clock"></small><p>Иллюстративная реконструкция: корабль, масштаб и движение условны. Портрет обработан ИИ для отделения от фона. Фото Земли — современный материал NASA, не запись полёта 1961 года.</p></div></main>
+<script>
+const $=id=>document.getElementById(id),ctx=$('scene').getContext('2d',{alpha:false}),W=1920,H=1080;
+let C,portrait,earth,ship,playing=!location.search.includes('capture'),time=0,last=0;
+if(location.search.includes('capture'))document.body.classList.add('capture');
+const clamp=x=>Math.max(0,Math.min(1,x)),smooth=x=>{x=clamp(x);return x*x*(3-2*x)},out=x=>1-Math.pow(1-clamp(x),3),mix=(a,b,q)=>a+(b-a)*q;
+function load(src){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=src})}
+const texture=document.createElement('canvas');texture.width=W;texture.height=H;const tc=texture.getContext('2d');let seed=1961;function random(){seed=(1664525*seed+1013904223)>>>0;return seed/4294967296}const grain=tc.createImageData(W,H);for(let i=0;i<grain.data.length;i+=4){const g=226+random()*15;grain.data[i]=g;grain.data[i+1]=g-8;grain.data[i+2]=g-27;grain.data[i+3]=255}tc.putImageData(grain,0,0);
+function projection(x,y,z,camX,camZ){z*=C.depth;const s=1900/(1900-z-camZ);return {x:960+(x-960-camX)*s,y:540+(y-540)*s,s}}
+function sprite(image,x,y,h,z,cx,cz,angle=0,shadow=true,filter='none'){const p=projection(x,y,z,cx,cz);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(angle);ctx.filter=filter;if(shadow){ctx.shadowColor='#20302855';ctx.shadowBlur=24*p.s;ctx.shadowOffsetX=18*p.s;ctx.shadowOffsetY=28*p.s}const hh=h*p.s,ww=hh*image.width/image.height;ctx.drawImage(image,-ww/2,-hh/2,ww,hh);ctx.restore()}
+function text(s,x,y,size,face,color,z,cx,cz){const p=projection(x,y,z,cx,cz);ctx.save();ctx.fillStyle=color;ctx.font=`600 ${size*p.s}px ${face}`;ctx.fillText(s,p.x,p.y);ctx.restore()}
+function clipText(s,x,y,size,face,color,z,cx,cz,q){if(q<=0)return;const p=projection(x,y,z,cx,cz);ctx.save();ctx.beginPath();ctx.rect(p.x-8,p.y-size*p.s-5,1800, size*p.s+5);ctx.clip();text(s,x,y+size*(1-out(q)),size,face,color,z,cx,cz);ctx.restore()}
+function paperEdge(x,y,width,height,angle,z,cx,cz,color,blur=0){const p=projection(x,y,z,cx,cz);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(angle);ctx.filter=`blur(${blur}px)`;ctx.shadowColor='#34352744';ctx.shadowBlur=30;ctx.shadowOffsetY=22;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(-width*p.s/2,-height*p.s/2);ctx.lineTo(width*p.s/2,-height*p.s/2);for(let yy=-height/2;yy<=height/2;yy+=20)ctx.lineTo((width/2+9*Math.sin(yy*.11))*p.s,yy*p.s);ctx.lineTo(-width*p.s/2,height*p.s/2);ctx.closePath();ctx.fill();ctx.restore()}
+window.seek=function(t){time=t;draw(t)};
+function draw(raw){const t=raw*14/C.duration,r=(a,b)=>smooth((t-a)/(b-a));const travel=out((t-4.5)/1.65);const entry=out(t/1.4);const cx=mix(-210*C.motion,0,entry)+1460*travel+25*Math.sin(t*.2)*C.motion;const cz=60*entry+35*r(6.4,12)*C.motion;
+ctx.fillStyle=C.paper;ctx.fillRect(0,0,W,H);ctx.save();ctx.globalAlpha=.48;ctx.drawImage(texture,0,0);ctx.restore();
+// Distant paper field travels slowly, distinct from nearer image planes.
+const p=projection(1300,500,-750,cx,cz);ctx.save();ctx.strokeStyle='#a89d8544';ctx.lineWidth=1.5;ctx.translate(p.x,p.y);ctx.rotate(-.08);for(let i=-1400;i<1600;i+=180){ctx.beginPath();ctx.moveTo(i,-1000);ctx.lineTo(i,1100);ctx.stroke()}ctx.restore();
+if(t<6.3){paperEdge(310,730,1180,1750,-.095,-140,cx,cz,'#d4c7ab');
+// Large type belongs to the middle plane; the silhouette overlaps its left edge.
+text('1961',840,330,310,'Oswald','#cbbd9f',-220,cx,cz);
+clipText(C.date,930,450,36,'PTMono',C.ink,-100,cx,cz,(t-.5)/.8);
+clipText('ПЕРВЫЙ',900,630,130,'Oswald',C.ink,-60,cx,cz,(t-.9)/.65);
+clipText('В КОСМОСЕ',925,780,120,'Oswald',C.ink,-60,cx,cz,(t-1.15)/.7);
+sprite(portrait,560+65*(1-entry)*C.motion,790,1380+120*(1-entry)*C.motion,170,cx,cz,-.01+(.015*(1-entry)),true,'contrast(1.04)');
+// Identity strip is a separate near plane, entering with a directional reveal.
+if(t>.9){const p=projection(185,955,260,cx,cz);ctx.save();ctx.beginPath();ctx.rect(p.x,p.y-62,580*out((t-.9)/.7),86);ctx.clip();ctx.fillStyle='#eee4cd';ctx.fillRect(p.x,p.y-62,580,86);ctx.restore();if(t>1.2){ctx.save();ctx.beginPath();ctx.rect(p.x,p.y-62,580*out((t-1.2)/.6),86);ctx.clip();text(C.name,212,954,42,'Onest',C.ink,260,cx,cz);ctx.restore()}}}
+// Detail scene is spatially adjacent, revealed by a camera traverse.
+if(t>4.3){const ec=2480,ey=540,er=510;const ep=projection(ec,ey,-180,cx,cz);
+const shipQ=smooth((t-6.3)/5.4);const a=mix(-1.25,1.0,shipQ),sx=ec+650*Math.cos(a),sy=ey+260*Math.sin(a);const shipZ=-80+350*Math.sin(a);
+ctx.save();ctx.translate(ep.x,ep.y);ctx.rotate(-.16);ctx.strokeStyle='#955c4488';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(0,0,695*ep.s,338*ep.s,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+function vessel(){sprite(ship,sx,sy,350+70*shipQ,shipZ,cx,cz,.10+.13*shipQ,true,'saturate(.55) contrast(1.04)')}
+if(shipZ<-180)vessel();
+sprite(earth,ec,ey,1020,-180,cx,cz,-.07+.08*r(6,14),true,'saturate(.54) contrast(1.05)');
+// Ship begins behind the upper limb and passes into the near plane.
+if(shipZ>=-180)vessel();
+clipText(C.date,1640,220,36,'PTMono',C.ink,-35,cx,cz,(t-6.1)/.7);
+clipText(C.number,1650,585,250,'Oswald',C.ink,80,cx,cz,(t-6.45)/.75);
+clipText(C.unit,1665,680,46,'Onest',C.ink,80,cx,cz,(t-6.7)/.7);
+if(t>6)text('Иллюстративная реконструкция',1640,995,23,'Onest','#687064',-35,cx,cz);}
+// Near paper passes the lens during traverse; this is an occlusion, not a dissolve.
+const wipe=clamp((t-4.48)/1.4);if(wipe>0&&wipe<1){const wx=mix(-1900,3300,smooth(wipe));paperEdge(wx,550,1700,1800,-.13,0,0,0,'#efe5cf',3+12*Math.sin(wipe*Math.PI))}
+// Out-of-focus foreground sheet provides visible depth at the edge of the frame.
+paperEdge(-720-150*travel,1160,1750,270,-.09,420,0,0,'#c6b897',4);
+$('time').value=raw;$('clock').textContent=raw.toFixed(2)+' с';}
+async function init(){C=await (await fetch('scene.json')).json();[portrait,earth,ship]=await Promise.all([load('gagarin_cutout.png'),load('earth.png'),load('vostok.png')]);await Promise.all(['600 130px Oswald','600 42px Onest','600 36px PTMono'].map(x=>document.fonts.load(x)));for(const id of ['name','date','number','unit','duration','motion','depth']){$(id).value=C[id];$(id).oninput=()=>{C[id]=['duration','motion','depth'].includes(id)?+$(id).value:$(id).value;$('time').max=C.duration;draw(time)}}$('time').max=C.duration;draw(0);window.READY=true;requestAnimationFrame(tick)}
+function tick(now){if(last&&playing)time+=(now-last)/1000;last=now;if(C&&time>C.duration)time=0;if(window.READY)draw(time);requestAnimationFrame(tick)}$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'Пауза':'Играть'};$('reset').onclick=()=>window.seek(0);$('time').oninput=()=>{playing=false;$('play').textContent='Играть';window.seek(+$('time').value)};$('save').onclick=()=>{let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(C,null,2)],{type:'application/json'}));a.download='scene.json';a.click()};for(const [id,key] of [['portraitUpload','portrait'],['earthUpload','earth'],['shipUpload','ship']])$(id).onchange=async e=>{if(!e.target.files[0])return;const im=await load(URL.createObjectURL(e.target.files[0]));if(key==='portrait')portrait=im;if(key==='earth')earth=im;if(key==='ship')ship=im;draw(time)};init().catch(e=>{window.ERROR=String(e);console.error(e)});
+</script></html>

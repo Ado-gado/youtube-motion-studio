@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+outputs/
+scenes/
+.install-report.json
+.audit-report.json
+.agents/
+*.mp4
+*.gif
