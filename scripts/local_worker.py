@@ -93,6 +93,13 @@ class Worker:
             if job['status']=='rendering':job['status']='pending'
 
     def discover(self):
+        retry=self.queue/'RETRY_ERRORS'
+        if retry.exists():
+            count=0
+            for job in self.state['jobs'].values():
+                if job['status']=='error':job['status']='pending';count+=1
+            save_state(self.queue,self.state);retry.unlink()
+            emit(self.queue,'retry_requested',jobs=count)
         folders=[self.queue/'inbox']+([self.downloads] if self.downloads and self.downloads.exists() else [])
         changed=False
         for folder in folders:
@@ -151,7 +158,7 @@ def main():
     start=sub.add_parser('start');start.add_argument('--downloads',type=Path)
     submit=sub.add_parser('submit');src=submit.add_mutually_exclusive_group(required=True);src.add_argument('--file',type=Path);src.add_argument('--url')
     inspect=sub.add_parser('inspect');inspect.add_argument('archive',type=Path);inspect.add_argument('--extract',type=Path)
-    sub.add_parser('status');sub.add_parser('stop')
+    sub.add_parser('status');sub.add_parser('stop');sub.add_parser('retry-errors')
     for action in sub.choices.values():action.add_argument('--queue',type=Path,default=DEFAULT_QUEUE)
     a=p.parse_args();queue=prepare(a.queue)
     if a.cmd=='inspect':
@@ -162,6 +169,9 @@ def main():
         print('Queued archive: '+str(archive));return
     if a.cmd=='stop':
         (queue/'STOP').write_text('Stop after the current job\n',encoding='utf8');print('Stop requested; current video will finish first.');return
+    if a.cmd=='retry-errors':
+        (queue/'RETRY_ERRORS').write_text('Retry failed jobs after their cause has been fixed\n',encoding='utf8')
+        print('Failed jobs will be retried by the worker; completed videos are unchanged. Start the worker if it is stopped.');return
     if a.cmd=='status':
         state=load_state(queue);counts={s:sum(j['status']==s for j in state['jobs'].values()) for s in ['pending','rendering','done','error']}
         print(json.dumps({'running':running(queue),'queue':str(queue),'ready':str(queue/'ready'),'counts':counts,'jobs':list(state['jobs'].values())},ensure_ascii=True,indent=2));return

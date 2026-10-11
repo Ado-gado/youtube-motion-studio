@@ -3,6 +3,7 @@ import argparse,json,zipfile,uuid,re,hashlib
 from datetime import datetime,timezone
 from runtime import ROOT
 from job_bundle import ALLOWED,MAX_BYTES,safe_name,validate_manifest,inspect_bundle
+from local_fonts import read_config
 
 def main():
     p=argparse.ArgumentParser(description='Export one requested scene and its local assets for PC rendering; no video render')
@@ -14,6 +15,7 @@ def main():
     if a.scene.is_symlink() or a.scene_root.is_symlink():raise ValueError('Do not include symlinks')
     root=a.scene_root.resolve();scene=a.scene.resolve();scene.relative_to(root)
     if root==Path(root.anchor) or not scene.is_file() or scene.suffix!='.html':raise ValueError('Choose an HTML scene within its project, not the filesystem root')
+    local_font_config=read_config(scene)
     candidates=set()
     for folder in [scene.parent,root/'fonts',*a.include]:
         if folder.is_symlink():raise ValueError('Do not include symlinks')
@@ -49,6 +51,6 @@ def main():
             manifest['files'][name]=h.hexdigest()
         validate_manifest(manifest);z.writestr('motion-job.json',json.dumps(manifest,ensure_ascii=False,indent=2))
     inspect_bundle(partial);partial.replace(out)
-    print(json.dumps({'bundle':str(out),'job_id':job_id,'files':len(manifest['files']),'bytes':out.stat().st_size,'video_rendered':False},ensure_ascii=False,indent=2))
+    print(json.dumps({'bundle':str(out),'job_id':job_id,'files':len(manifest['files']),'bytes':out.stat().st_size,'video_rendered':False,'desktop_fonts_required':local_font_config['fonts'] if local_font_config else []},ensure_ascii=False,indent=2))
 
 if __name__=='__main__':main()

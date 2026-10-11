@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright
 from PIL import Image,ImageDraw
 from runtime import ROOT,ffmpeg_path,launch
 from frame_capture import FrameCapture
+from local_fonts import read_config,init_script,await_fonts
 
 parser=argparse.ArgumentParser(description='Deterministic documentary scene exporter')
 parser.add_argument('scene',type=Path)
@@ -24,6 +25,7 @@ if scene_root==Path(scene_root.anchor):raise SystemExit('Do not serve the filesy
 try:relative=scene.relative_to(scene_root)
 except ValueError:raise SystemExit('Scene must be inside --scene-root')
 if not scene.is_file():raise SystemExit('Missing scene file')
+local_font_config=read_config(scene);local_font_report=[]
 if args.duration<=0 or args.fps<1 or min(args.width,args.height)<2:raise SystemExit('Invalid duration, fps or dimensions')
 if args.width%2 or args.height%2:raise SystemExit('H.264/yuv420p requires even dimensions')
 if args.audio and not args.audio.is_file():raise SystemExit('Missing audio file')
@@ -45,9 +47,14 @@ try:
             else:network_blocked.append(target.split('?')[0]);route.abort()
         page.route('**/*',local_assets_only)
         page.on('pageerror',lambda e:errors.append(str(e)))
-        page.goto(url);page.wait_for_function('window.READY===true || Boolean(window.ERROR)',timeout=60000)
+        if local_font_config:page.add_init_script(init_script(local_font_config))
+        page.goto(url)
+        if local_font_config:local_font_report=await_fonts(page)
+        page.wait_for_function('window.READY===true || Boolean(window.ERROR)',timeout=60000)
         error=page.evaluate('window.ERROR || null')
         if error:raise RuntimeError('Scene failed: '+str(error))
+        if local_font_config and not page.evaluate('window.MOTION_TEXT_LAYOUT_READY===true'):
+            raise RuntimeError('Scene must await MOTION_LOCAL_FONTS_READY and recalculate text layout before setting MOTION_TEXT_LAYOUT_READY=true and READY=true. See LOCAL_FONTS.md.')
         page.evaluate('document.fonts.ready');page.wait_for_function("typeof window.seek==='function'")
         page.evaluate("async()=>{if(typeof window.pauseForExport==='function')await window.pauseForExport()}")
         frame=page.locator('#scene')
@@ -101,6 +108,8 @@ try:
             assert list(checks['probe']['size'])==[args.width,args.height]
             assert abs(checks['probe']['fps']-args.fps)<.01
         checks['decode']='pass'
+    checks['local_fonts']=local_font_report
+    checks['text_layout_ready']=bool(local_font_config)
     checks['total_seconds']=round(time.perf_counter()-started,3)
     (out.parent/'checks.json').write_text(json.dumps(checks,ensure_ascii=False,indent=2),encoding='utf8')
     print('Render checks passed. Inspect contact-sheet.jpg and the actual MP4 before delivery.',flush=True)
